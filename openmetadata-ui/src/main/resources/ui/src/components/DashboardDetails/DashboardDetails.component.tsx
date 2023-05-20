@@ -33,7 +33,7 @@ import React, {
 } from 'react';
 import { useTranslation } from 'react-i18next';
 import { restoreDashboard } from 'rest/dashboardAPI';
-import { getEntityName } from 'utils/EntityUtils';
+import { getEntityBreadcrumbs, getEntityName } from 'utils/EntityUtils';
 import { getFilterTags } from 'utils/TableTags/TableTags.utils';
 import { ReactComponent as ExternalLinkIcon } from '../../assets/svg/external-link.svg';
 import { FQN_SEPARATOR_CHAR } from '../../constants/char.constants';
@@ -84,7 +84,6 @@ import {
 const DashboardDetails = ({
   followDashboardHandler,
   unfollowDashboardHandler,
-  slashedDashboardName,
   activeTab,
   setActiveTabHandler,
   dashboardDetails,
@@ -115,6 +114,8 @@ const DashboardDetails = ({
 
   const [tagFetchFailed, setTagFetchFailed] = useState<boolean>(false);
   const [isTagLoading, setIsTagLoading] = useState<boolean>(false);
+  const [isGlossaryLoading, setIsGlossaryLoading] = useState<boolean>(false);
+
   const [threadLink, setThreadLink] = useState<string>('');
 
   const [elementRef, isInView] = useElementInView(observerOptions);
@@ -159,6 +160,11 @@ const DashboardDetails = ({
       followersCount: followers?.length ?? 0,
     };
   }, [followers]);
+
+  const breadcrumb = useMemo(
+    () => getEntityBreadcrumbs(dashboardDetails, EntityType.DASHBOARD),
+    [dashboardDetails]
+  );
 
   const { getEntityPermission } = usePermissionProvider();
 
@@ -224,7 +230,7 @@ const DashboardDetails = ({
   );
 
   const fetchGlossaryTags = async () => {
-    setIsTagLoading(true);
+    setIsGlossaryLoading(true);
     try {
       const res = await fetchGlossaryTerms();
 
@@ -235,7 +241,7 @@ const DashboardDetails = ({
     } catch {
       setTagFetchFailed(true);
     } finally {
-      setIsTagLoading(false);
+      setIsGlossaryLoading(false);
     }
   };
 
@@ -474,7 +480,7 @@ const DashboardDetails = ({
     }
   };
 
-  const handleChartTagSelection = (
+  const handleChartTagSelection = async (
     selectedTags: Array<EntityTags>,
     editColumnTag: ChartType,
     otherTags: TagLabel[]
@@ -505,7 +511,7 @@ const DashboardDetails = ({
         tags: [...(prevTags as TagLabel[]), ...newTags],
       };
       const jsonPatch = compare(editColumnTag, updatedChart);
-      chartTagUpdateHandler(editColumnTag.id, jsonPatch);
+      await chartTagUpdateHandler(editColumnTag.id, jsonPatch);
     }
   };
 
@@ -685,7 +691,7 @@ const DashboardDetails = ({
             hasTagEditAccess={hasEditTagAccess(record)}
             index={index}
             isReadOnly={deleted}
-            isTagLoading={isTagLoading}
+            isTagLoading={isGlossaryLoading}
             record={record}
             tagFetchFailed={tagFetchFailed}
             tagList={glossaryTags}
@@ -695,7 +701,18 @@ const DashboardDetails = ({
         ),
       },
     ],
-    [renderDescription]
+    [
+      deleted,
+      isTagLoading,
+      isGlossaryLoading,
+      tagFetchFailed,
+      glossaryTags,
+      classificationTags,
+      renderDescription,
+      fetchGlossaryTags,
+      handleChartTagSelection,
+      hasEditTagAccess,
+    ]
   );
 
   return (
@@ -733,7 +750,7 @@ const DashboardDetails = ({
           tags={dashboardTags}
           tagsHandler={onTagUpdate}
           tier={tier}
-          titleLinks={slashedDashboardName}
+          titleLinks={breadcrumb}
           updateOwner={
             dashboardPermissions.EditAll || dashboardPermissions.EditOwner
               ? onOwnerUpdate

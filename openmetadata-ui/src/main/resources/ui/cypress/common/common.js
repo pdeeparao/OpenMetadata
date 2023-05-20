@@ -96,27 +96,7 @@ export const handleIngestionRetry = (
     '/api/v1/services/ingestionPipelines/*/pipelineStatus?startTs=*&endTs=*',
     'pipelineStatuses'
   );
-  interceptURL(
-    'GET',
-    '/api/v1/permissions/ingestionPipeline/name/*',
-    'ingestionPermissions'
-  );
   interceptURL('GET', '/api/v1/services/*/name/*', 'serviceDetails');
-  interceptURL(
-    'GET',
-    '/api/v1/system/config/pipeline-service-client',
-    'airflow'
-  );
-  interceptURL(
-    'GET',
-    '/api/v1/permissions/*/name/*',
-    'serviceDetailsPermission'
-  );
-  interceptURL(
-    'GET',
-    '/api/v1/services/ingestionPipelines/status',
-    'getIngestionPipelineStatus'
-  );
   interceptURL('GET', '/api/v1/permissions?limit=100', 'allPermissions');
 
   // ingestions page
@@ -134,7 +114,6 @@ export const handleIngestionRetry = (
         verifyResponseStatusCode('@pipelineStatuses', 200, {
           responseTimeout: 50000,
         });
-        verifyResponseStatusCode('@ingestionPermissions', 200);
       }
     }
   };
@@ -143,15 +122,11 @@ export const handleIngestionRetry = (
 
     if (retryCount !== 0) {
       cy.wait('@allPermissions').then(() => {
-        verifyResponseStatusCode('@getIngestionPipelineStatus', 200);
-        verifyResponseStatusCode('@serviceDetailsPermission', 200);
         verifyResponseStatusCode('@serviceDetails', 200);
         verifyResponseStatusCode('@ingestionPipelines', 200);
-        verifyResponseStatusCode('@airflow', 200);
         verifyResponseStatusCode('@pipelineStatuses', 200, {
           responseTimeout: 50000,
         });
-        verifyResponseStatusCode('@ingestionPermissions', 200);
       });
     }
 
@@ -203,7 +178,9 @@ export const scheduleIngestion = () => {
   cy.get('[data-testid="deploy-button"]').should('be.visible').click();
 
   verifyResponseStatusCode('@createIngestionPipelines', 201);
-  verifyResponseStatusCode('@deployPipeline', 200);
+  verifyResponseStatusCode('@deployPipeline', 200, {
+    responseTimeout: 50000,
+  });
   verifyResponseStatusCode('@getIngestionPipelineStatus', 200);
   // check success
   cy.get('[data-testid="success-line"]', { timeout: 15000 }).should(
@@ -280,8 +257,7 @@ export const testServiceCreationAndIngestion = ({
 
   interceptURL('GET', '/api/v1/automations/workflows/*', 'getWorkflow');
 
-  cy.get('[data-testid="test-connection-btn"]').should('exist');
-  cy.get('[data-testid="test-connection-btn"]').click();
+  cy.get('[data-testid="test-connection-btn"]').should('exist').click();
 
   verifyResponseStatusCode('@testConnectionStepDefinition', 200);
 
@@ -311,8 +287,7 @@ export const testServiceCreationAndIngestion = ({
   cy.contains(`"${serviceName}"`).should('be.visible');
   cy.contains('has been created successfully').should('be.visible');
 
-  cy.get('[data-testid="add-ingestion-button"]').should('be.visible');
-  cy.get('[data-testid="add-ingestion-button"]').click();
+  cy.get('[data-testid="add-ingestion-button"]').should('be.visible').click();
 
   // Add ingestion page
   cy.get('[data-testid="add-ingestion-container"]').should('be.visible');
@@ -346,21 +321,10 @@ export const testServiceCreationAndIngestion = ({
     'ingestionPipelines'
   );
   interceptURL('GET', '/api/v1/services/*/name/*', 'serviceDetails');
-  interceptURL('GET', '/api/v1/databases?service=*&fields=*', 'database');
-  interceptURL(
-    'GET',
-    '/api/v1/permissions/*/name/*',
-    'serviceDetailsPermission'
-  );
 
   cy.get('[data-testid="view-service-button"]').should('be.visible').click();
-  verifyResponseStatusCode('@getIngestionPipelineStatus', 200);
-  verifyResponseStatusCode('@serviceDetailsPermission', 200);
   verifyResponseStatusCode('@serviceDetails', 200);
   verifyResponseStatusCode('@ingestionPipelines', 200);
-  if (isDatabaseService(type)) {
-    verifyResponseStatusCode('@database', 200);
-  }
   handleIngestionRetry(type, testIngestionButton);
 };
 
@@ -395,7 +359,7 @@ export const deleteCreatedService = (
     .should('be.visible')
     .click();
 
-  cy.get(`[data-testid="entity-header-name"]`)
+  cy.get(`[data-testid="entity-header-display-name"]`)
     .should('exist')
     .should('be.visible')
     .invoke('text')
@@ -405,10 +369,19 @@ export const deleteCreatedService = (
 
   verifyResponseStatusCode('@getServices', 200);
 
-  cy.get('[data-testid="service-delete"]')
+  // Clicking on permanent delete radio button and checking the service name
+  cy.get('[data-testid="manage-button"]')
     .should('exist')
     .should('be.visible')
     .click();
+
+  cy.get('[data-menu-id*="delete-button"]')
+    .should('exist')
+    .should('be.visible');
+  cy.get('[data-testid="delete-button-title"]')
+    .should('be.visible')
+    .click()
+    .as('deleteBtn');
 
   // Clicking on permanent delete radio button and checking the service name
   cy.get('[data-testid="hard-delete-option"]')
@@ -555,7 +528,12 @@ export const searchEntity = (term, suggestionOverly = true) => {
   }
 };
 
-export const visitEntityDetailsPage = (term, serviceName, entity) => {
+export const visitEntityDetailsPage = (
+  term,
+  serviceName,
+  entity,
+  dataTestId
+) => {
   interceptURL('GET', '/api/v1/*/name/*', 'getEntityDetails');
   interceptURL(
     'GET',
@@ -564,7 +542,7 @@ export const visitEntityDetailsPage = (term, serviceName, entity) => {
   );
   interceptURL('GET', `/api/v1/search/suggest?q=*&index=*`, 'searchQuery');
   interceptURL('GET', `/api/v1/search/*`, 'explorePageSearch');
-
+  const id = dataTestId ?? `${serviceName}-${term}`;
   // searching term in search box
   cy.get('[data-testid="searchBox"]').scrollIntoView().should('be.visible');
   cy.get('[data-testid="searchBox"]').type(term);
@@ -572,13 +550,9 @@ export const visitEntityDetailsPage = (term, serviceName, entity) => {
   cy.get('[data-testid="suggestion-overlay"]').should('exist');
   cy.get('body').then(($body) => {
     // checking if requested term is available in search suggestion
-    if (
-      $body.find(
-        `[data-testid="${serviceName}-${term}"] [data-testid="data-name"]`
-      ).length
-    ) {
+    if ($body.find(`[data-testid="${id}"] [data-testid="data-name"]`).length) {
       // if term is available in search suggestion, redirecting to entity details page
-      cy.get(`[data-testid="${serviceName}-${term}"] [data-testid="data-name"]`)
+      cy.get(`[data-testid="${id}"] [data-testid="data-name"]`)
         .should('be.visible')
         .first()
         .click();
@@ -592,7 +566,7 @@ export const visitEntityDetailsPage = (term, serviceName, entity) => {
       cy.get(`[data-testid="${entity}-tab"]`).should('be.visible');
       verifyResponseStatusCode('@explorePageTabSearch', 200);
 
-      cy.get(`[data-testid="${serviceName}-${term}"]`)
+      cy.get(`[data-testid="${id}"]`)
         .scrollIntoView()
         .should('be.visible')
         .click();
